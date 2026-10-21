@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Attendance">
+<meta name="theme-color" content="#0f172a">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png">
+<title>Attendance</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root{--bg:#0f172a;--card:#1e293b;--line:#334155;--txt:#e2e8f0;--mute:#94a3b8;--acc:#38bdf8;
+        --office:#22c55e;--home:#3b82f6;--wfa:#a855f7;--ooo:#f59e0b;--off:#475569;--warn:#ef4444}
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--txt);
+       padding:env(safe-area-inset-top) 0 calc(70px + env(safe-area-inset-bottom))}
+  header{padding:14px 18px 4px;font-size:22px;font-weight:700}
+  main{padding:8px 14px}
+  .card{background:var(--card);border-radius:16px;padding:16px;margin-bottom:14px}
+  .muted{color:var(--mute);font-size:13px}
+  h2{font-size:17px;margin:0 0 10px}
+  button{font:inherit;border:0;border-radius:12px;padding:12px 14px;background:var(--line);color:var(--txt);cursor:pointer}
+  button.primary{background:var(--acc);color:#0f172a;font-weight:600}
+  button:active{opacity:.75}
+  input,select{font:inherit;background:#0b1222;color:var(--txt);border:1px solid var(--line);border-radius:10px;padding:10px;width:100%}
+  label{display:block;font-size:13px;color:var(--mute);margin:10px 0 4px}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .big{font-size:18px;font-weight:600;padding:22px 10px;border-radius:14px}
+  .s-Office{background:var(--office)!important;color:#052e16!important}
+  .s-Home{background:var(--home)!important;color:#fff!important}
+  .s-WFA{background:var(--wfa)!important;color:#fff!important}
+  .s-OOO{background:var(--ooo)!important;color:#1c1917!important}
+  .sel{outline:3px solid #fff;outline-offset:2px}
+  .pill{display:inline-block;padding:3px 10px;border-radius:999px;font-size:13px;font-weight:600;background:var(--off)}
+  .metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+  .metric{background:#0b1222;border-radius:12px;padding:10px;text-align:center}
+  .metric b{display:block;font-size:20px}
+  .metric span{font-size:11px;color:var(--mute)}
+  .pct b{color:var(--acc)}
+  .row{display:grid;grid-template-columns:62px 1fr 1fr;gap:8px;align-items:center;padding:6px 0;border-bottom:1px solid var(--line)}
+  .row.nonwork{opacity:.5}
+  .row.today{background:rgba(56,189,248,.08);border-radius:8px}
+  .row select,.row input{padding:7px;font-size:14px}
+  .d{font-size:14px;line-height:1.1}.d small{color:var(--mute);font-size:11px}
+  .monthnav{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+  table{width:100%;border-collapse:collapse;font-size:14px}
+  th,td{padding:7px 4px;text-align:center;border-bottom:1px solid var(--line)} th{color:var(--mute);font-weight:500}
+  td:first-child,th:first-child{text-align:left}
+  nav{position:fixed;bottom:0;left:0;right:0;display:flex;background:#0b1222;border-top:1px solid var(--line);
+      padding-bottom:env(safe-area-inset-bottom)}
+  nav button{flex:1;background:none;border-radius:0;padding:12px 0;color:var(--mute);font-size:13px}
+  nav button.on{color:var(--acc);font-weight:600}
+  .hidden{display:none!important}
+  .token{font-family:ui-monospace,Menlo,monospace;font-size:12px;word-break:break-all;background:#0b1222;padding:8px;border-radius:8px}
+  #toast{position:fixed;left:50%;bottom:90px;transform:translateX(-50%);background:#f8fafc;color:#0f172a;padding:10px 16px;
+         border-radius:999px;font-size:14px;opacity:0;transition:opacity .25s;pointer-events:none;z-index:9}
+  #toast.show{opacity:1}
+</style>
+</head>
+<body>
+<header id="title">Attendance</header>
+<main>
+
+  <!-- LOGIN -->
+  <section id="v-login" class="hidden">
+    <div class="card">
+      <h2>Sign in</h2>
+      <label>Email</label><input id="email" type="email" autocomplete="email">
+      <label>Password</label><input id="pw" type="password" autocomplete="current-password">
+      <div class="grid2" style="margin-top:14px">
+        <button class="primary" onclick="signIn()">Sign in</button>
+        <button onclick="signUp()">Create account</button>
+      </div>
+      <p class="muted" id="loginMsg"></p>
+    </div>
+  </section>
+
+  <!-- TODAY -->
+  <section id="v-today" class="hidden">
+    <div class="card">
+      <div class="muted" id="todayDate"></div>
+      <h2 style="margin-top:4px">Where are you working today?</h2>
+      <div class="grid2" id="todayBtns"></div>
+      <p class="muted" id="todayInfo" style="margin-bottom:0"></p>
+    </div>
+    <div class="card">
+      <h2 id="todayMonthTitle">This month</h2>
+      <div class="metrics" id="todayMetrics"></div>
+    </div>
+  </section>
+
+  <!-- MONTH -->
+  <section id="v-month" class="hidden">
+    <div class="card">
+      <div class="monthnav">
+        <button onclick="shiftMonth(-1)">‹</button><h2 id="monthTitle" style="margin:0"></h2><button onclick="shiftMonth(1)">›</button>
+      </div>
+      <div class="metrics" id="monthMetrics"></div>
+    </div>
+    <div class="card" id="monthRows"></div>
+  </section>
+
+  <!-- SUMMARY -->
+  <section id="v-summary" class="hidden">
+    <div class="card">
+      <h2>Summary by month</h2>
+      <table><thead><tr><th>Month</th><th>Work</th><th>Office</th><th>WFA</th><th>OOO</th><th>%</th></tr></thead>
+      <tbody id="sumBody"></tbody></table>
+      <p class="muted">% = (Office + WFA) ÷ (Working days − OOO), same as your spreadsheet.</p>
+    </div>
+  </section>
+
+  <!-- SETTINGS -->
+  <section id="v-settings" class="hidden">
+    <div class="card">
+      <h2>Locations</h2>
+      <label>Office (lat, lon)</label>
+      <div class="grid2"><input id="oLat" inputmode="decimal" placeholder="latitude"><input id="oLon" inputmode="decimal" placeholder="longitude"></div>
+      <button style="margin-top:8px;width:100%" onclick="useHere('o')">📍 Set office to my current location</button>
+      <label>Home (lat, lon)</label>
+      <div class="grid2"><input id="hLat" inputmode="decimal" placeholder="latitude"><input id="hLon" inputmode="decimal" placeholder="longitude"></div>
+      <button style="margin-top:8px;width:100%" onclick="useHere('h')">📍 Set home to my current location</button>
+      <label>Auto-log radius (miles)</label><input id="radius" inputmode="decimal">
+      <label>Time zone</label><input id="tz">
+      <button class="primary" style="margin-top:14px;width:100%" onclick="saveSettings()">Save</button>
+    </div>
+    <div class="card">
+      <h2>iPhone Shortcut details</h2>
+      <p class="muted">Copy these into the Shortcut (see README). Keep the token private – anyone with it can trigger auto-logging for you.</p>
+      <label>Endpoint URL</label><div class="token" id="endpoint"></div>
+      <button style="margin-top:6px" onclick="copy('endpoint')">Copy</button>
+      <label>apikey header (public anon key)</label><div class="token" id="anon"></div>
+      <button style="margin-top:6px" onclick="copy('anon')">Copy</button>
+      <label>Your secret token (p_token)</label><div class="token" id="token"></div>
+      <div class="grid2" style="margin-top:6px"><button onclick="copy('token')">Copy</button><button onclick="regenToken()">Regenerate</button></div>
+    </div>
+    <div class="card">
+      <h2>Data</h2>
+      <div class="grid2">
+        <button onclick="refreshBH()">Refresh UK bank holidays</button>
+        <button onclick="exportCSV()">Export CSV</button>
+      </div>
+      <button style="margin-top:10px;width:100%" onclick="sb.auth.signOut().then(()=>location.reload())">Sign out</button>
+    </div>
+  </section>
+</main>
+
+<nav id="nav" class="hidden">
+  <button data-v="today" onclick="show('today')">Today</button>
+  <button data-v="month" onclick="show('month')">Month</button>
+  <button data-v="summary" onclick="show('summary')">Summary</button>
+  <button data-v="settings" onclick="show('settings')">Settings</button>
+</nav>
+<div id="toast"></div>
+
+<script>
+/* ===================== CONFIG – paste your Supabase project values ===================== */
+const SUPABASE_URL  = 'https://sajpkaztximisvledfao.supabase.co';
+const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNhanBrYXp0eGltaXN2bGVkZmFvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTI2MTQzMzksImV4cCI6MjEwODE5MDMzOX0.cd4ALlTNaHH0owz-0JFtM0UoZ_DD9gZvCAsuFKFGQWY';
+/* ====================================================================================== */
+
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
+const STATUSES = ['--','Office','Home','WFA','OOO','Bank Holiday','Weekend'];
+const WORKING  = ['--','Office','Home','WFA','OOO'];          // = "Is Eligible Day" column in the sheet
+const DAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+
+let user = null, settings = null, att = {}, bh = new Set(), view = new Date();
+
+/* ---------- helpers ---------- */
+const $ = id => document.getElementById(id);
+const iso = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+const todayISO = () => new Intl.DateTimeFormat('en-CA',{timeZone:(settings&&settings.timezone)||'Europe/London',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+function toast(t){const e=$('toast');e.textContent=t;e.classList.add('show');setTimeout(()=>e.classList.remove('show'),2200)}
+function copy(id){navigator.clipboard.writeText($(id).textContent).then(()=>toast('Copied'))}
+
+function effective(dateISO){
+  if (att[dateISO]) return att[dateISO].status;
+  const dow = new Date(dateISO+'T12:00:00').getDay();
+  if (dow===0||dow===6) return 'Weekend';
+  if (bh.has(dateISO)) return 'Bank Holiday';
+  return '--';
+}
+
+/* Same formulas as the spreadsheet */
+function metrics(y,m){
+  const n = new Date(y,m+1,0).getDate(); const t = todayISO();
+  let work=0,office=0,home=0,wfa=0,ooo=0,unlogged=0;
+  for(let d=1; d<=n; d++){
+    const k = iso(new Date(y,m,d)), s = effective(k);
+    if (WORKING.includes(s)) work++;
+    if (s==='Office') office++; if (s==='Home') home++; if (s==='WFA') wfa++; if (s==='OOO') ooo++;
+    if (s==='--' && k<=t) unlogged++;
+  }
+  const pct = (work-ooo) ? (office+wfa)/(work-ooo)*100 : 0;
+  return {total:n, work, office, home, wfa, ooo, unlogged, pct};
+}
+function metricsHTML(x){
+  const c=(v,l,cls='')=>`<div class="metric ${cls}"><b>${v}</b><span>${l}</span></div>`;
+  return c(x.office,'Office')+c(x.home,'Home')+c(x.pct.toFixed(1)+'%','Attendance','pct')+
+         c(x.work,'Working days')+c(x.wfa+' / '+x.ooo,'WFA / OOO')+c(x.unlogged,'Not logged yet');
+}
+
+/* ---------- data ---------- */
+async function loadAll(){
+  const [a,s,b] = await Promise.all([
+    sb.from('attendance').select('*'),
+    sb.from('settings').select('*').maybeSingle(),
+    sb.from('bank_holidays').select('day')
+  ]);
+  att = {}; (a.data||[]).forEach(r=>att[r.day]=r);
+  bh = new Set((b.data||[]).map(r=>r.day));
+  settings = s.data;
+  if (!settings){ const r = await sb.from('settings').insert({user_id:user.id}).select().single(); settings = r.data; }
+}
+async function setStatus(dateISO, status){
+  if (status==='--'){
+    await sb.from('attendance').delete().eq('day',dateISO); delete att[dateISO];
+  } else {
+    const row = {user_id:user.id, day:dateISO, status, note:att[dateISO]?.note||null, source:'manual', updated_at:new Date().toISOString()};
+    const {data,error} = await sb.from('attendance').upsert(row,{onConflict:'user_id,day'}).select().single();
+    if (error) return toast(error.message); att[dateISO]=data;
+  }
+  render();
+}
+async function setNote(dateISO, note){
+  const status = effective(dateISO);
+  if (!att[dateISO] && !note) return;
+  const {data,error} = await sb.from('attendance').upsert({user_id:user.id,day:dateISO,status,note:note||null,
+    source:att[dateISO]?.source||'manual',updated_at:new Date().toISOString()},{onConflict:'user_id,day'}).select().single();
+  if (error) return toast(error.message); att[dateISO]=data; toast('Note saved');
+}
+
+/* ---------- views ---------- */
+function show(v){
+  ['login','today','month','summary','settings'].forEach(x=>$('v-'+x).classList.toggle('hidden',x!==v));
+  document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on',b.dataset.v===v));
+  $('title').textContent = {today:'Today',month:'Month',summary:'Summary',settings:'Settings',login:'Attendance'}[v];
+  render();
+}
+function render(){
+  if(!user) return;
+  // Today
+  const t = todayISO(), td = new Date(t+'T12:00:00'), cur = effective(t);
+  $('todayDate').textContent = td.toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+  $('todayBtns').innerHTML = ['Office','Home','WFA','OOO'].map(s=>
+    `<button class="big s-${s} ${cur===s?'sel':''}" onclick="setStatus('${t}','${s}')">${s}</button>`).join('');
+  $('todayInfo').innerHTML = att[t] ? `Logged as <b>${cur}</b>${att[t].source==='auto'?' (automatically)':''}. Tap another option to change it.`
+                    : (cur==='--' ? 'Not logged yet.' : `Today is a ${cur.toLowerCase()}.`);
+  $('todayMonthTitle').textContent = MONTHS[td.getMonth()]+' '+td.getFullYear();
+  $('todayMetrics').innerHTML = metricsHTML(metrics(td.getFullYear(),td.getMonth()));
+  // Month
+  const y=view.getFullYear(), m=view.getMonth(), n=new Date(y,m+1,0).getDate();
+  $('monthTitle').textContent = MONTHS[m]+' '+y;
+  $('monthMetrics').innerHTML = metricsHTML(metrics(y,m));
+  let h='';
+  for(let d=1; d<=n; d++){
+    const k=iso(new Date(y,m,d)), s=effective(k), dow=DAYS[new Date(y,m,d).getDay()];
+    h+=`<div class="row ${WORKING.includes(s)?'':'nonwork'} ${k===t?'today':''}">
+      <div class="d">${d}<br><small>${dow.slice(0,3)}${att[k]?.source==='auto'?' ⚡':''}</small></div>
+      <select class="${'s-'+s}" onchange="setStatus('${k}',this.value)">${STATUSES.map(o=>`<option ${o===s?'selected':''}>${o}</option>`).join('')}</select>
+      <input placeholder="note" value="${(att[k]?.note||'').replace(/"/g,'&quot;')}" onchange="setNote('${k}',this.value)">
+    </div>`;
+  }
+  $('monthRows').innerHTML = h;
+  // Summary
+  const keys = Object.keys(att).sort(); const out=[];
+  if (keys.length){
+    let a = new Date(keys[0]+'T12:00:00'); a = new Date(a.getFullYear(),a.getMonth(),1);
+    const end = new Date(td.getFullYear(),td.getMonth(),1);
+    while(a<=end){ const x=metrics(a.getFullYear(),a.getMonth());
+      out.unshift(`<tr><td>${MONTHS[a.getMonth()].slice(0,3)} ${String(a.getFullYear()).slice(2)}</td><td>${x.work}</td><td>${x.office}</td><td>${x.wfa}</td><td>${x.ooo}</td><td><b>${x.pct.toFixed(1)}</b></td></tr>`);
+      a = new Date(a.getFullYear(),a.getMonth()+1,1); }
+  }
+  $('sumBody').innerHTML = out.join('') || '<tr><td colspan="6">No data yet</td></tr>';
+  // Settings
+  if (settings){
+    $('oLat').value=settings.office_lat??''; $('oLon').value=settings.office_lon??'';
+    $('hLat').value=settings.home_lat??'';   $('hLon').value=settings.home_lon??'';
+    $('radius').value=(settings.radius_m/1609.344).toFixed(2); $('tz').value=settings.timezone;
+    $('token').textContent=settings.api_token; $('anon').textContent=SUPABASE_ANON;
+    $('endpoint').textContent=SUPABASE_URL+'/rest/v1/rpc/auto_log';
+  }
+}
+function shiftMonth(k){ view = new Date(view.getFullYear(), view.getMonth()+k, 1); render(); }
+
+/* ---------- settings actions ---------- */
+function useHere(p){
+  if(!navigator.geolocation) return toast('Location not available');
+  toast('Getting location…');
+  navigator.geolocation.getCurrentPosition(pos=>{
+    $(p+'Lat').value=pos.coords.latitude.toFixed(6); $(p+'Lon').value=pos.coords.longitude.toFixed(6);
+    toast('Location captured – tap Save');
+  }, e=>toast('Location error: '+e.message), {enableHighAccuracy:true, timeout:15000});
+}
+async function saveSettings(){
+  const num=v=>v===''?null:Number(v);
+  const upd={office_lat:num($('oLat').value),office_lon:num($('oLon').value),home_lat:num($('hLat').value),home_lon:num($('hLon').value),
+             radius_m:Math.round(Number($('radius').value||0.5)*1609.344), timezone:$('tz').value||'Europe/London'};
+  const {data,error}=await sb.from('settings').update(upd).eq('user_id',user.id).select().single();
+  if(error) return toast(error.message); settings=data; toast('Saved'); render();
+}
+async function regenToken(){
+  if(!confirm('Create a new token? You will need to update your Shortcut.')) return;
+  const {data,error}=await sb.from('settings').update({api_token:crypto.randomUUID()}).eq('user_id',user.id).select().single();
+  if(error) return toast(error.message); settings=data; render(); toast('New token created');
+}
+async function refreshBH(){
+  try{
+    const j = await (await fetch('https://www.gov.uk/bank-holidays.json')).json();
+    const rows = j['england-and-wales'].events.map(e=>({day:e.date,title:e.title}));
+    await sb.from('bank_holidays').upsert(rows,{onConflict:'day',ignoreDuplicates:true});
+    rows.forEach(r=>bh.add(r.day)); render(); toast('Bank holidays updated');
+  }catch(e){ toast('Could not reach gov.uk'); }
+}
+function exportCSV(){
+  const lines=['Date,Day,Status,Note,Source'];
+  Object.keys(att).sort().forEach(k=>{const r=att[k];
+    lines.push([k,DAYS[new Date(k+'T12:00:00').getDay()],r.status,'"'+(r.note||'').replace(/"/g,'""')+'"',r.source].join(','))});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([lines.join('\n')],{type:'text/csv'}));
+  a.download='attendance.csv'; a.click();
+}
+
+/* ---------- auth ---------- */
+async function signIn(){
+  const {error}=await sb.auth.signInWithPassword({email:$('email').value.trim(),password:$('pw').value});
+  if(error) $('loginMsg').textContent=error.message; else start();
+}
+async function signUp(){
+  const {error}=await sb.auth.signUp({email:$('email').value.trim(),password:$('pw').value});
+  $('loginMsg').textContent = error ? error.message : 'Account created. If email confirmation is on, confirm it, then sign in.';
+}
+async function start(){
+  const {data:{session}} = await sb.auth.getSession();
+  if(!session){ show('login'); return; }
+  user = session.user; await loadAll();
+  $('nav').classList.remove('hidden'); show('today');
+}
+document.addEventListener('visibilitychange',async()=>{ if(!document.hidden && user){ await loadAll(); render(); } });
+if('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
+start();
+</script>
+</body>
+</html>
